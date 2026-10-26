@@ -254,7 +254,7 @@ def approve_paper(set_id: str, subject_id: str = Depends(get_subject_id)):
         if not row:
             raise HTTPException(404, "Paper set not found")
     coordinator = CoordinatorAgent()
-    coordinator.approve_set(set_id)
+    coordinator.approve_set(set_id, subject_id=subject_id)
     AuditRepository().log("APPROVE_SET", subject_id=subject_id, paper_set_id=set_id)
     return {"ok": True, "set_id": set_id, "status": "APPROVED"}
 

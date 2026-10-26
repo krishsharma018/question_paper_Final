@@ -28,8 +28,8 @@ class QuestionRepository:
 
     # ── Write operations ──────────────────────────────────────────────────────
 
-    def upsert(self, question: Question, subject_id: str = "genai-001") -> QuestionDB:
-        """Insert or update a question record for the given subject."""
+    def upsert(self, question: Question, subject_id: str = "genai-001") -> Question:
+        """Insert or update a question record for the given subject. Returns domain Question."""
         with get_session() as session:
             existing = (
                 session.query(QuestionDB)
@@ -41,15 +41,18 @@ class QuestionRepository:
             )
             vp_json = json.dumps(
                 [vp.model_dump() for vp in question.valuation_points]
+                if question.valuation_points else []
             )
+            bloom_val = question.bloom_level.value if hasattr(question.bloom_level, 'value') else question.bloom_level
+            appr_val = question.approval_status.value if hasattr(question.approval_status, 'value') else question.approval_status
             if existing:
                 existing.question_text = question.question_text
-                existing.bloom_level = question.bloom_level.value if hasattr(question.bloom_level, 'value') else question.bloom_level
+                existing.bloom_level = bloom_val
                 existing.model_answer = question.model_answer
                 existing.valuation_points = vp_json
-                existing.approval_status = question.approval_status.value if hasattr(question.approval_status, 'value') else question.approval_status
+                existing.approval_status = appr_val
                 existing.chapter_name = question.chapter_name
-                return existing
+                return self._db_to_domain(existing)
             else:
                 db_q = QuestionDB(
                     subject_id=subject_id,
@@ -59,24 +62,69 @@ class QuestionRepository:
                     chapter_number=question.chapter_number,
                     chapter_name=question.chapter_name,
                     question_text=question.question_text,
-                    bloom_level=question.bloom_level.value if hasattr(question.bloom_level, 'value') else question.bloom_level,
+                    bloom_level=bloom_val,
                     marks=question.marks,
                     question_type=question.question_type.value if hasattr(question.question_type, 'value') else question.question_type,
                     difficulty=question.difficulty.value if hasattr(question.difficulty, 'value') else question.difficulty,
                     model_answer=question.model_answer,
                     valuation_points=vp_json,
                     source=question.source.value if hasattr(question.source, 'value') else question.source,
-                    approval_status=question.approval_status.value if hasattr(question.approval_status, 'value') else question.approval_status,
+                    approval_status=appr_val,
                     usage_count=question.usage_count,
                     last_used_at=question.last_used_at,
                 )
                 session.add(db_q)
-                return db_q
+                session.flush()
+                return self._db_to_domain(db_q)
 
     def bulk_upsert(self, questions: list[Question], subject_id: str = "genai-001") -> int:
-        """Upsert many questions for the given subject. Returns count inserted/updated."""
-        for q in questions:
-            self.upsert(q, subject_id)
+        """Upsert many questions for the given subject in a single transaction. Returns count inserted/updated."""
+        if not questions:
+            return 0
+        with get_session() as session:
+            for question in questions:
+                existing = (
+                    session.query(QuestionDB)
+                    .filter(
+                        QuestionDB.question_id == question.question_id,
+                        QuestionDB.subject_id == subject_id,
+                    )
+                    .first()
+                )
+                vp_json = json.dumps(
+                    [vp.model_dump() for vp in question.valuation_points]
+                    if question.valuation_points else []
+                )
+                bloom_val = question.bloom_level.value if hasattr(question.bloom_level, 'value') else question.bloom_level
+                appr_val = question.approval_status.value if hasattr(question.approval_status, 'value') else question.approval_status
+                if existing:
+                    existing.question_text = question.question_text
+                    existing.bloom_level = bloom_val
+                    existing.model_answer = question.model_answer
+                    existing.valuation_points = vp_json
+                    existing.approval_status = appr_val
+                    existing.chapter_name = question.chapter_name
+                else:
+                    db_q = QuestionDB(
+                        subject_id=subject_id,
+                        question_id=question.question_id,
+                        course_name=question.course_name,
+                        unit_number=question.unit_number,
+                        chapter_number=question.chapter_number,
+                        chapter_name=question.chapter_name,
+                        question_text=question.question_text,
+                        bloom_level=bloom_val,
+                        marks=question.marks,
+                        question_type=question.question_type.value if hasattr(question.question_type, 'value') else question.question_type,
+                        difficulty=question.difficulty.value if hasattr(question.difficulty, 'value') else question.difficulty,
+                        model_answer=question.model_answer,
+                        valuation_points=vp_json,
+                        source=question.source.value if hasattr(question.source, 'value') else question.source,
+                        approval_status=appr_val,
+                        usage_count=question.usage_count,
+                        last_used_at=question.last_used_at,
+                    )
+                    session.add(db_q)
         return len(questions)
 
     def update(self, question_id: str, subject_id: str, **kwargs) -> Optional[Question]:

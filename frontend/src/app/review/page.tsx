@@ -62,8 +62,13 @@ export default function ReviewPage() {
     setDetail(null)
     setLoadingDetail(true)
     try {
-      setDetail(await api.getPaper(id))
-    } finally { setLoadingDetail(false) }
+      const p = await api.getPaper(id)
+      setDetail(p)
+    } catch (err: unknown) {
+      setMsg(`❌ Failed to load paper details: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setLoadingDetail(false)
+    }
   }
 
   async function handleApprove() {
@@ -71,11 +76,19 @@ export default function ReviewPage() {
     setApproving(true)
     try {
       await api.approvePaper(selected)
-      setMsg('✅ Paper set approved!')
+      setMsg('✅ Paper set and all questions approved!')
       setPapers(p => p.map(x => x.set_id === selected ? { ...x, status: 'APPROVED' } : x))
-      setDetail(d => d ? { ...d, status: 'APPROVED' } : null)
-      setTimeout(() => setMsg(''), 3000)
-    } finally { setApproving(false) }
+      setDetail(d => d ? {
+        ...d,
+        status: 'APPROVED',
+        questions: d.questions.map(q => ({ ...q, approval_status: 'APPROVED' })),
+      } : null)
+      setTimeout(() => setMsg(''), 4000)
+    } catch (err: unknown) {
+      setMsg(`❌ Approval failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setApproving(false)
+    }
   }
 
   async function updateQ(slotId: string, status: string, text?: string) {
@@ -83,10 +96,24 @@ export default function ReviewPage() {
     setUpdatingSlot(slotId)
     try {
       const updated = await api.updateQuestionStatus(selected, slotId, status, text)
-      setDetail(d => d ? {
-        ...d,
-        questions: d.questions.map(q => q.slot_id === slotId ? updated : q)
-      } : null)
+      setDetail(d => {
+        if (!d) return null
+        const questions = d.questions.map(q => q.slot_id === slotId ? updated : q)
+        const allApprovedNow = questions.length > 0 && questions.every(q => q.approval_status === 'APPROVED')
+        return {
+          ...d,
+          status: allApprovedNow ? 'APPROVED' : d.status,
+          questions,
+        }
+      })
+      if (status === 'APPROVED') {
+        setMsg(`✅ Question ${slotId} approved`)
+      } else if (status === 'REJECTED') {
+        setMsg(`❌ Question ${slotId} marked as rejected`)
+      }
+      setTimeout(() => setMsg(''), 3000)
+    } catch (err: unknown) {
+      setMsg(`❌ Failed to update question ${slotId}: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setUpdatingSlot(null)
       setEditingSlot(null)
@@ -105,8 +132,8 @@ export default function ReviewPage() {
       } : null)
       setMsg(`⚡ Question ${slotId} regenerated successfully!`)
       setTimeout(() => setMsg(''), 4000)
-    } catch (err: any) {
-      setMsg(`❌ Regeneration failed: ${err.message || err}`)
+    } catch (err: unknown) {
+      setMsg(`❌ Regeneration failed: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setRegeneratingSlot(null)
     }
@@ -128,8 +155,8 @@ export default function ReviewPage() {
   const pendingCount = detail?.questions.filter(q => q.approval_status === 'PENDING').length ?? 0
   const allApproved = Boolean(
     detail &&
-    detail.questions.length > 0 &&
-    detail.questions.every(q => q.approval_status === 'APPROVED')
+    (detail.status === 'APPROVED' ||
+      (detail.questions.length > 0 && detail.questions.every(q => q.approval_status === 'APPROVED')))
   )
 
   return (
@@ -217,7 +244,13 @@ export default function ReviewPage() {
                   </button>
                   {allApproved ? (
                     <button className="btn btn-secondary btn-sm"
-                      onClick={() => window.open(api.exportDocxUrl(detail.set_id))}
+                      onClick={async () => {
+                        try {
+                          await api.downloadExport(detail.set_id, 'docx')
+                        } catch (err: unknown) {
+                          window.open(api.exportDocxUrl(detail.set_id))
+                        }
+                      }}
                       title="Download DOCX format">
                       📥 DOCX
                     </button>
@@ -231,7 +264,13 @@ export default function ReviewPage() {
                   )}
                   {allApproved ? (
                     <button className="btn btn-secondary btn-sm"
-                      onClick={() => window.open(api.exportPdfUrl(detail.set_id))}
+                      onClick={async () => {
+                        try {
+                          await api.downloadExport(detail.set_id, 'pdf')
+                        } catch (err: unknown) {
+                          window.open(api.exportPdfUrl(detail.set_id))
+                        }
+                      }}
                       title="Download PDF format">
                       📄 PDF
                     </button>

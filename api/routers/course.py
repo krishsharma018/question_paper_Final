@@ -70,7 +70,7 @@ def save_course_structure(body: CourseStructureIn):
 
 
 @router.post("/lesson-plan/extract", response_model=LessonPlanExtractionOut)
-async def extract_lesson_plan(file: UploadFile = File(...)):
+def extract_lesson_plan(file: UploadFile = File(...)):
     """Legacy LP extract endpoint — kept for backward compat."""
     suffix = Path(file.filename or "plan.pdf").suffix.lower()
     allowed = {".pdf", ".docx", ".txt", ".md", ".xlsx"}
@@ -196,7 +196,7 @@ def set_active_subject(body: SetActiveSubjectIn):
 # ── LP Parse (parse only — does NOT save) ─────────────────────────────────────
 
 @subjects_router.post("/lp-parse", response_model=LpParseOut)
-async def parse_lp_for_subject(file: UploadFile = File(...)):
+def parse_lp_for_subject(file: UploadFile = File(...)):
     """
     Upload an LP document, parse with Qwen, and return the extracted data.
     Data is NOT saved — the frontend shows it in a review/edit screen first.

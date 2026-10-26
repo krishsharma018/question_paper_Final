@@ -71,7 +71,7 @@ def get_completeness(
 
 
 @router.post("/import", response_model=ImportResultOut)
-async def import_question_bank(
+def import_question_bank(
     file: UploadFile = File(...),
     subject_id: str = Depends(get_subject_id),
 ):

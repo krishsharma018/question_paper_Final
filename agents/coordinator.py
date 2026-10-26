@@ -110,7 +110,7 @@ class CoordinatorAgent:
         result = GenerationResult(success=False, request_id=request_id)
         rng = random.Random(request.random_seed)
 
-        self._audit("GENERATION_START", request_id=request_id, details={
+        self._audit("GENERATION_START", request_id=request_id, subject_id=request.subject_id, details={
             "exam_type": request.exam_type.value if hasattr(request.exam_type, "value") else request.exam_type,
             "num_sets": request.num_sets,
             "l2_percent": request.l2_percent,
@@ -130,10 +130,10 @@ class CoordinatorAgent:
                 exam_subtype=request.exam_subtype,
             )
             result.blueprints.append(blueprint)
-            self._audit("BLUEPRINT_BUILT", request_id=request_id, details={"type": str(type(blueprint).__name__)})
+            self._audit("BLUEPRINT_BUILT", request_id=request_id, subject_id=request.subject_id, details={"type": str(type(blueprint).__name__)})
         except Exception as exc:
             result.errors.append(f"Blueprint error: {exc}")
-            self._audit("BLUEPRINT_FAILED", request_id=request_id, details={"error": str(exc)})
+            self._audit("BLUEPRINT_FAILED", request_id=request_id, subject_id=request.subject_id, details={"error": str(exc)})
             return result
 
         # ── Step 2: Get used question IDs for exclusion ────────────────────────
@@ -255,7 +255,7 @@ class CoordinatorAgent:
             result.validation_reports.append(val_report)
 
             generated_sets.append(paper_set)
-            self._audit("SET_GENERATED", request_id=request_id, paper_set_id=set_id,
+            self._audit("SET_GENERATED", request_id=request_id, paper_set_id=set_id, subject_id=request.subject_id,
                         details={"validation": val_report.status.value if hasattr(val_report.status, "value") else val_report.status})
 
         if not generated_sets:
@@ -304,21 +304,20 @@ class CoordinatorAgent:
 
         result.success = True
         result.complete_paper = complete_paper
-        self._audit("GENERATION_COMPLETE", request_id=request_id,
+        self._audit("GENERATION_COMPLETE", request_id=request_id, subject_id=request.subject_id,
                     details={"sets_generated": len(generated_sets)})
         return result
 
-    def approve_set(self, set_id: str) -> None:
-        """Mark a paper set as APPROVED. Records approval in audit log."""
-        self._paper_repo.update_set_status(
-            set_id, "APPROVED", approved_at=datetime.utcnow()
-        )
+    def approve_set(self, set_id: str, subject_id: Optional[str] = None) -> None:
+        """Mark a paper set and all associated questions as APPROVED. Records approval in audit log."""
+        self._paper_repo.approve_paper_set_and_questions(set_id, subject_id=subject_id)
         self._audit_repo.log(
             action="SET_APPROVED",
+            subject_id=subject_id or "default-subject",
             paper_set_id=set_id,
             details={"approved_at": datetime.utcnow().isoformat()},
         )
-        logger.info(f"Paper set {set_id} APPROVED")
+        logger.info(f"Paper set {set_id} and all questions APPROVED")
 
     def export_approved(
         self,
@@ -394,10 +393,11 @@ class CoordinatorAgent:
                 })
         return slots
 
-    def _audit(self, action: str, request_id: str = "", paper_set_id: str = "", details: dict = None):
+    def _audit(self, action: str, request_id: str = "", paper_set_id: str = "", details: dict = None, subject_id: str = "default-subject"):
         try:
             self._audit_repo.log(
                 action=action,
+                subject_id=subject_id,
                 request_id=request_id,
                 paper_set_id=paper_set_id or None,
                 details=details or {},

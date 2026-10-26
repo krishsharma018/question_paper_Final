@@ -69,8 +69,8 @@ class BlueprintService:
         scheme = marking_scheme or {}
         total_q = scheme.get("total_questions", 3)
         q_attempt = scheme.get("questions_to_attempt", 2)
-        total_marks = scheme.get("total_marks", 30)
-        sub_pattern = scheme.get("sub_question_pattern") or [10, 5]
+        total_marks = scheme.get("total_marks", MINOR_MARKS)
+        sub_pattern = scheme.get("sub_question_pattern") or [10, 10]
         duration_str = scheme.get("duration", "")
         # Parse duration minutes if string like "75 minutes" or "60 mins"
         dur_mins = 75
@@ -233,10 +233,12 @@ class BlueprintService:
                 f"Cannot allocate negative counts: L2={l2_count} L3={l3_count}"
             )
 
-        # Check within tolerance
+        # Check within tolerance, accounting for integer discretization with small totals
         achieved_l2_pct = l2_count / total * 100
         achieved_l3_pct = l3_count / total * 100
-        if abs(achieved_l2_pct - l2_pct) > tolerance:
+        # Granularity of 1 question is (100 / total)%; rounding half-step is (50 / total)%
+        effective_tolerance = max(float(tolerance), (50.0 / total) + 0.05)
+        if abs(achieved_l2_pct - l2_pct) > effective_tolerance:
             raise BlueprintError(
                 f"Cannot achieve L2={l2_pct}% within ±{tolerance}% tolerance "
                 f"with {total} questions. Achieved L2={achieved_l2_pct:.1f}%."

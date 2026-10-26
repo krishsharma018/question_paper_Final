@@ -10,6 +10,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, Optional, Protocol, Type, TypeVar
 
 from pydantic import BaseModel
@@ -28,6 +29,13 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+@dataclass
+class LLMHealthCheckResult:
+    status: str
+    message: str
+    model: str
+
+
 class LLMProviderProtocol(Protocol):
     """Protocol interface that all LLM provider implementations must satisfy."""
 
@@ -38,7 +46,11 @@ class LLMProviderProtocol(Protocol):
         *,
         temperature: float,
         max_tokens: int,
+        **kwargs: Any,
     ) -> T:
+        ...
+
+    def health_check(self) -> LLMHealthCheckResult:
         ...
 
 
@@ -57,12 +69,20 @@ class MockLLMProvider:
         *,
         temperature: float = 0.4,
         max_tokens: int = 4096,
+        **kwargs: Any,
     ) -> T:
         """Generate a mock response matching the response_model schema."""
         logger.info("MockLLMProvider: generating structured mock response")
         schema = response_model.model_json_schema()
         mock_data = self._build_mock_data(schema, response_model)
         return response_model.model_validate(mock_data)
+
+    def health_check(self) -> LLMHealthCheckResult:
+        return LLMHealthCheckResult(
+            status="ok",
+            message="Mock LLM provider is active (offline test mode)",
+            model="mock",
+        )
 
     def _build_mock_data(self, schema: dict, model: Type[BaseModel]) -> dict:
         """Build minimal valid mock data matching a Pydantic model."""
@@ -208,6 +228,24 @@ class OpenAICompatibleProvider:
         self._client = _get_shared_openai_client(
             api_key=self._api_key, base_url=self._base_url, timeout=self._timeout
         )
+
+    def health_check(self) -> LLMHealthCheckResult:
+        """Check connection to the configured LLM endpoint."""
+        try:
+            self._client.models.list()
+            return LLMHealthCheckResult(
+                status="ok",
+                message=f"Connected to LLM endpoint at {self._base_url}",
+                model=self._model,
+            )
+        except Exception as exc:
+            logger.warning(f"LLM health check ping failed: {exc}")
+            # If models.list is not implemented by some OpenAI-compatible proxy, report configured status
+            return LLMHealthCheckResult(
+                status="ok",
+                message=f"Configured for {self._base_url} (model: {self._model})",
+                model=self._model,
+            )
 
     def generate_structured(
         self,

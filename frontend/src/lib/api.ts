@@ -56,14 +56,27 @@ function _subjectHeaders(): Record<string, string> {
   return {}
 }
 
+/** Determines if a path is subject-scoped (and should be cancelled when active subject switches) */
+function _isSubjectScoped(path: string): boolean {
+  if (path === '/subjects' || path.startsWith('/subjects/active') || path.startsWith('/subjects/lp-parse') || path === '/health' || path.startsWith('/settings')) {
+    return false
+  }
+  return true
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ..._subjectHeaders(),
     ...(init?.headers as Record<string, string> | undefined),
   }
+  // Only attach subject _abortController if request is subject-scoped and no custom signal provided
+  const signal = init?.signal !== undefined
+    ? init.signal
+    : (_isSubjectScoped(path) ? (_abortController?.signal ?? undefined) : undefined)
+
   const res = await fetch(`${BASE}${path}`, {
-    signal: _abortController?.signal ?? undefined,
+    signal,
     ...init,
     headers,
   })
@@ -77,10 +90,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 async function upload<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
   const fd = new FormData()
   fd.append(fieldName, file)
+  // File uploads like lp-parse should not be cancelled by background subject switches
+  const signal = _isSubjectScoped(path) ? (_abortController?.signal ?? undefined) : undefined
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     body: fd,
-    signal: _abortController?.signal ?? undefined,
+    signal,
     headers: _subjectHeaders(),
   })
   if (!res.ok) {
@@ -393,9 +408,35 @@ export const api = {
   approvePaper: (setId: string) =>
     request<{ ok: boolean }>(`/papers/${setId}/approve`, { method: 'POST' }),
   getValidation: (setId: string) => request<ValidationReport>(`/papers/${setId}/validation`),
-  exportDocxUrl: (setId: string) => `${BASE}/papers/${setId}/export/docx`,
-  exportPdfUrl: (setId: string) => `${BASE}/papers/${setId}/export/pdf`,
-  previewUrl: (setId: string) => `${BASE}/papers/${setId}/preview`,
+  exportDocxUrl: (setId: string, subjectId?: string) => {
+    const sid = subjectId || _activeSubjectId
+    return `${BASE}/papers/${setId}/export/docx${sid ? `?subject_id=${encodeURIComponent(sid)}` : ''}`
+  },
+  exportPdfUrl: (setId: string, subjectId?: string) => {
+    const sid = subjectId || _activeSubjectId
+    return `${BASE}/papers/${setId}/export/pdf${sid ? `?subject_id=${encodeURIComponent(sid)}` : ''}`
+  },
+  previewUrl: (setId: string, subjectId?: string) => {
+    const sid = subjectId || _activeSubjectId
+    return `${BASE}/papers/${setId}/preview${sid ? `?subject_id=${encodeURIComponent(sid)}` : ''}`
+  },
+  downloadExport: async (setId: string, format: 'docx' | 'pdf', filename?: string) => {
+    const url = format === 'docx' ? api.exportDocxUrl(setId) : api.exportPdfUrl(setId)
+    const res = await fetch(url, { headers: _subjectHeaders() })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Export failed (${res.status}): ${err}`)
+    }
+    const blob = await res.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = filename || `${setId}.${format}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(blobUrl)
+  },
 
   // ── Audit ────────────────────────────────────────────────────────────────────────────
   getStats: () => request<Stats>('/audit/stats'),

@@ -108,13 +108,13 @@ class QuestionBankService:
         return self._repo.bulk_upsert(result.questions, subject_id=subject_id)
 
     def chapter_completeness_report(
-        self, expected_chapters: int = 7
+        self, expected_chapters: int = 7, subject_id: str = "default-subject"
     ) -> dict[int, dict[str, Any]]:
         """
         Return per-chapter counts of L2 and L3 questions.
         Flags chapters with fewer or more than 10 questions per level.
         """
-        counts = self._repo.count_by_chapter_bloom()
+        counts = self._repo.count_by_chapter_bloom(subject_id=subject_id)
         report: dict[int, dict[str, Any]] = {}
         for ch in range(1, expected_chapters + 1):
             l2 = counts.get((ch, "L2"), 0)

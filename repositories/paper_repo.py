@@ -107,6 +107,22 @@ class PaperRepository:
                 if notes is not None:
                     db_set.faculty_notes = notes
 
+    def approve_paper_set_and_questions(self, set_id: str, subject_id: Optional[str] = None) -> None:
+        """Mark a paper set as APPROVED and approve all associated questions."""
+        with get_session() as session:
+            q_set = session.query(PaperSetDB).filter(PaperSetDB.set_id == set_id)
+            if subject_id:
+                q_set = q_set.filter(PaperSetDB.subject_id == subject_id)
+            db_set = q_set.first()
+            if db_set:
+                db_set.status = "APPROVED"
+                db_set.approved_at = datetime.utcnow()
+
+            q_questions = session.query(PaperQuestionDB).filter(PaperQuestionDB.paper_set_id == set_id)
+            if subject_id:
+                q_questions = q_questions.filter(PaperQuestionDB.subject_id == subject_id)
+            q_questions.update({"approval_status": "APPROVED"}, synchronize_session=False)
+
     def update_question_text(self, paper_set_id: str, slot_id: str, new_text: str, subject_id: str) -> None:
         with get_session() as session:
             pq = session.query(PaperQuestionDB).filter(

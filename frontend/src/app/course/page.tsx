@@ -768,7 +768,12 @@ export default function CoursePage() {
         setSelectedSubject(detail)
         setActiveId(list[0].subject_id)
       }
-    } catch (_) {}
+    } catch (err: unknown) {
+      console.error('[CoursePage] loadSubjects error:', err)
+      if (isMounted.current) {
+        showMsg(`Failed to load subjects: ${err instanceof Error ? err.message : String(err)}`, 'error')
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -781,7 +786,12 @@ export default function CoursePage() {
 
   function showMsg(text: string, variant: 'success' | 'error' | 'warning' = 'success') {
     setMsg({ text, variant })
-    setTimeout(() => setMsg(null), 4000)
+    if (variant === 'error' || variant === 'warning') {
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    }
+    setTimeout(() => setMsg(null), 5000)
   }
 
   // ── Subject switching ───────────────────────────────────────────────────────

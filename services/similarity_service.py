@@ -61,6 +61,9 @@ class SimilarityService:
         """Lazily load the sentence-transformer model."""
         if self._embedding_model is not None:
             return
+        if self._settings.is_mock_mode:
+            self._embedding_model = None
+            return
         try:
             from sentence_transformers import SentenceTransformer
             model_name = self._settings.embedding_model
